@@ -1,11 +1,14 @@
 import sys
-import train
-from utils.dataset import BayesianDatasetMultivar, IRLookupDataset, SampleDataset, TestSampleDataset
-from utils.nn import WeightedMAE
-from torch.utils.data import random_split, DataLoader
-import torch
 import numpy as np
 import random
+
+from torch.utils.data import random_split, DataLoader
+import torch
+
+from train import Train
+from utils.dataset import TestQueryDatasetMultivar, IRLookupDataset, SampleDataset, TestSampleDataset
+from utils.nn import WeightedMAE
+from BN_baseline import get_asia_model, clean_samples_asia, learn_model, BN_total_MAE, BN_sample_MAE
 
 def sample_based_evaluation(model, test_sample):
     
@@ -20,9 +23,9 @@ def sample_based_evaluation(model, test_sample):
 
     return mae/len(test_sample)
 
-def run_sample_seeds(train_split, full_sample_set, N, **kwargs):
+def learn_NN(train_split, full_sample_set, N, **kwargs):
 
-    mae_total, sample_mae_total, reg_total = [], [], []
+    mae_total, sample_mae_total = [], []
 
     for s in kwargs["seed"]:
 
@@ -34,37 +37,70 @@ def run_sample_seeds(train_split, full_sample_set, N, **kwargs):
 
         # perform train/test split and create test sample dataset
         train_sample, test_sample = random_split(full_sample_set, [train_split, len(full_sample_set)-train_split], generator=torch.Generator().manual_seed(s))
-        test_sample = TestSampleDataset(test_sample, kwargs["test_prob"], kwargs["var"])
+        test_sample_data = TestSampleDataset(test_sample, kwargs["test_set"], kwargs["var"])
 
         # split off N training instances from remaining data
         train_data, _ = random_split(train_sample, [N, len(train_sample)-N], generator=torch.Generator().manual_seed(s))
 
         # train model for seed s
-        model, test_mae, reg_loss = train(**kwargs, train_data = train_data)
+        train = Train(**kwargs, train_data = train_data)
+        model, total_mae, _ = train()
 
         # calculate sample MAE for test instances sampled randomly from ground truth distribution
-        sample_mae = sample_based_evaluation(model, test_sample)
+        sample_mae = sample_based_evaluation(model, test_sample_data)
 
         # save model metrics 
-        mae_total.append(test_mae.detach().item())
+        mae_total.append(total_mae.detach().item())
         sample_mae_total.append(sample_mae.detach().item())
-        reg_total.append(reg_loss.detach().item())
 
-    return mae_total, sample_mae_total, reg_total
+    return mae_total, sample_mae_total
+
+def learn_BN(seed, GT_model, N, train_split, full_sample_set, test_set, var, mapping):
+    
+    mae_total, sample_mae_total = [], []
+
+    for s in seed: 
+
+        # set all seed to s
+        np.random.seed(s)
+        random.seed(s)
+
+        # perform train/test split, select N training instances
+        train_sample, test_sample = random_split(full_sample_set, [train_split, len(full_sample_set)-train_split], generator=torch.Generator().manual_seed(s))
+        test_sample_data = TestSampleDataset(test_sample, test_set, var)
+        train_data, _ = random_split(train_sample, [N, len(train_sample)-N], generator=torch.Generator().manual_seed(s))
+
+        # transform Datasets to pandas dataframe for easy use with pgmpy library
+        train_set = clean_samples_asia(train_data)
+        clean_test_set = clean_samples_asia(test_sample)
+
+        # learn Bayesian network from training data
+        learned_model = learn_model(GT_model, train_set)
+
+        # calculate total MAE and sample MAE
+        total_mae = BN_total_MAE(GT_model, learned_model)
+        sample_mae = BN_sample_MAE(GT_model, learned_model, test_sample_data, clean_test_set, mapping) 
+    
+        # save model metrics
+        mae_total.append(total_mae)
+        sample_mae_total.append(sample_mae)
+
+    return mae_total, sample_mae_total
 
 if __name__ == "__main__":
-    
-    bn_name = sys.argv[1]
 
     # input config
     sample_data_path = 'asia/asia_samples.txt' # 11000 samples extracted from ground-truth distribution
-    test_prob_path = 'asia/asia_ground_truth.txt' # ground-truth target probabilities for all possible queries (calculation of total MAE)
+    ground_truth_path = 'asia/asia_ground_truth.txt' # ground-truth target probabilities for all possible queries (calculation of total MAE)
     IR_data_path = 'asia/asia_independencies.txt' # independence relations extracted from ground-truth asia network
     var_names = ["asia", "smoke", "bronc", "dysp", "lung", "tub", "xray"] # names of variables, fixed order
     var = [2, 2, 2, 2, 2, 2, 2] # cardinality of all variables
     mapping = {"asia":[0, 1], "smoke":[2, 3], "bronc":[4, 5], "dysp":[6, 7], "lung":[8, 9], "tub":[10, 11], "xray":[12, 13]} # where to each variable's classes
     train_split = 10000 # total number of train samples to split off (remaining 1000 are test samples)
     
+    # get ground truth asia model
+    GT_model = get_asia_model() 
+
     # architecture config
     n = sum(var)
     h = [50, 50] # dimensions of hidden layers
@@ -82,7 +118,7 @@ if __name__ == "__main__":
 
     # generate datasets
     full_sample_set = SampleDataset("data/"+sample_data_path) 
-    test_prob = BayesianDatasetMultivar("data/"+test_prob_path)
+    test_set = TestQueryDatasetMultivar("data/"+ground_truth_path)
     IR_data = IRLookupDataset("data/"+IR_data_path, mapping, var_names, n)
 
     # select sample sizes
@@ -94,7 +130,7 @@ if __name__ == "__main__":
     with open(logfile, 'w') as f:
 
         # write configuration to file
-        f.write(f"bayesian model: {bn_name} \n")
+        f.write(f"BN structure: asia \n")
         f.write("------------------- \n")
         f.write("\n")
         for param, value in arch_config.items():
@@ -117,7 +153,21 @@ if __name__ == "__main__":
             f.write("----------------- \n")
             f.write("\n")
             f.write(f"Dataset size {N}\n")
+            f.write("\n")
 
+        # BN baseline
+        with open(logfile, 'a') as f:
+
+            f.write(f"BN \n")
+
+            total_mae, sample_mae = learn_BN(seed, GT_model, N, train_split, full_sample_set, test_set, var, mapping)
+
+            f.write(f"total MAE = {total_mae} \n")
+            f.write(f"sample MAE = {sample_mae} \n")
+            f.write("\n")
+
+        # NN baseline
+        # NN+REG
         method = "REG"
         for alpha in [0, 1, 10, 100]:
 
@@ -125,34 +175,32 @@ if __name__ == "__main__":
 
                 f.write(f"NN+REG, alpha = {alpha} \n") # when alpha = 0, we are effectively running base NN without REG
 
-                total_mae, sample_mae, reg_loss = run_sample_seeds(train_split, full_sample_set, N, test_prob=test_prob, IR_data=IR_data, var=var, n=n, mapping=mapping, 
+                total_mae, sample_mae = learn_NN(train_split, full_sample_set, N, test_set=test_set, IR_data=IR_data, var=var, n=n, mapping=mapping, 
                                                                 var_names=var_names, h=h, bs=bs, bs_reg=bs_reg, epochs=epochs, lr=lr,
                                                                 seed=seed, alpha=alpha, tb=tb, log_dir=log_dir, method=method)
                 
                 f.write(f"total MAE = {total_mae} \n")
                 f.write(f"sample MAE = {sample_mae} \n")
-                f.write(f"reg loss = {reg_loss} \n")
                 f.write("\n")
 
-                res_mean_sample[f"{method} {alpha}"] = {"total": np.mean(total_mae), "sample":np.mean(sample_mae), "reg":np.mean(reg_loss)}
-                res_std_sample[f"{method} {alpha}"] = {"total": np.std(total_mae), "sample":np.std(sample_mae), "reg":np.std(reg_loss)}
+                res_mean_sample[f"{method} {alpha}"] = {"total": np.mean(total_mae), "sample":np.mean(sample_mae)}
+                res_std_sample[f"{method} {alpha}"] = {"total": np.std(total_mae), "sample":np.std(sample_mae)}
         
+        # NN+COR
         method = "COR"
-
         with open(logfile, 'a') as f:
 
-            f.write(f"run models with COR approach \n")
-            total_mae, sample_mae, reg_loss = run_sample_seeds(train_split, full_sample_set, N, test_prob=test_prob, IR_data=IR_data, var=var, n=n, mapping=mapping, 
+            f.write(f"NN+COR \n")
+            total_mae, sample_mae = learn_NN(train_split, full_sample_set, N, test_set=test_set, IR_data=IR_data, var=var, n=n, mapping=mapping, 
                                                                 var_names=var_names, h=h, bs=bs, bs_reg=bs_reg, epochs=epochs, lr=lr, 
                                                                 seed=seed, alpha=alpha, tb=tb, log_dir=log_dir, method=method)
             
             f.write(f"total MAE = {total_mae} \n")
             f.write(f"sample MAE = {sample_mae} \n")
-            f.write(f"reg loss = {reg_loss} \n")
             f.write("\n")
 
-            res_mean_sample[f"{method}"] = {"total": np.mean(total_mae), "sample":np.mean(sample_mae), "reg":np.mean(reg_loss)}
-            res_std_sample[f"{method}"] = {"total": np.std(total_mae), "sample":np.std(sample_mae), "reg":np.std(reg_loss)}
+            res_mean_sample[f"{method}"] = {"total": np.mean(total_mae), "sample":np.mean(sample_mae)}
+            res_std_sample[f"{method}"] = {"total": np.std(total_mae), "sample":np.std(sample_mae)}
 
             res_mean.append(res_mean_sample)
             res_std.append(res_std_sample)

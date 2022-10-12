@@ -9,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 from models import NeuralBN
 from utils.nn import SelectiveCELoss, WeightedMSELoss, WeightedMAE
 
-class train():
+class Train():
 
     def __init__(self, **kwargs):
 
@@ -20,13 +20,13 @@ class train():
         self.mapping = kwargs["mapping"]
         self.method = kwargs["method"]
 
-        # load train data, ground-truth probabilities
-        test_data = kwargs["test_prob"]
+        # load ground-truth probabilities (test set)
+        test_data = kwargs["test_set"]
         self.test_dataloader = DataLoader(test_data, batch_size=self.bs, shuffle=False) # data loader for ground-truth probabilities
         self.n_test = len(test_data)
         print(f'Loaded ground-truth probability test dataset with size {self.n_test}')
 
-        # load sample data
+        # load sample data (train set)
         sample_data = kwargs["train_data"]
         self.sample_dataloader = DataLoader(sample_data, batch_size=self.bs, shuffle=True, drop_last=True) # data loader for bayesian model samples
         self.n_train = len(sample_data)
@@ -52,10 +52,11 @@ class train():
         if kwargs["tb"]: 
             timestr = time.strftime("%Y-%m-%d_%H-%M-%S")
             self.writer = SummaryWriter("runs/"+kwargs["log_dir"]+"/"+timestr)
-        print(f'Training NN with the following params: bs={self.bs}, bs_reg={kwargs["bs_reg"]}, epochs={self.epochs}, lr={kwargs["lr"]}, alpha={self.alpha}, weight_decay={kwargs["weight_decay"]}')
+        print(f'Training NN + {self.method} with the following params: bs={self.bs}, bs_reg={kwargs["bs_reg"]}, epochs={self.epochs}, lr={kwargs["lr"]}, alpha={self.alpha}')
 
-    def train(self):
+    def __call__(self):
         if self.method == "REG":
+
             return self.train_REG()
         elif self.method == "COR":
             return self.train_COR()

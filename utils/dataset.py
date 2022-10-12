@@ -1,12 +1,9 @@
 from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
-import pathlib
 import numpy as np
-import torch
 
 class TestQueryDataset(Dataset):
     """
-    contains the ground-truth conditional probability for all possible queries (all possible evidence combinations)
+    contains the ground-truth conditional probability for all possible evidence combinations (total MAE)
     see data/asia_samples.txt for expected format of file
     """
     def __init__(self, path):
@@ -91,8 +88,11 @@ class SampleDataset(Dataset):
 
 class TestSampleDataset(Dataset):
     """
-    stores
-    TODO: change test_prob in run_experiments file to other name (something with ground-truth)
+    stores ground-truth target probabilities for randomly sampled evidence values reflecting the underlying distribution of the data (sample MAE)
+    at initialization, receives: 
+    - samples: SampleDataset object containing test samples which serve as the observed values for the evidence, following the underlying ground-truth distribution
+    - ground-truth: TestQueryDataset object containing the target probabilities for all combinations of evidence, serves as a lookup
+    - var: list indicating number of classes per var, length is equal to number of vars, total sum is equal to input dim (n)
     """
     def __init__(self, samples, ground_truth, var):
 
@@ -109,7 +109,7 @@ class TestSampleDataset(Dataset):
                 stretch_mask += var[j]*[mask[j]]
             mask = np.array(stretch_mask)
 
-            # go through ground truth probabilities of BN (original test dataset) to get expected output probability
+            # go through ground truth probabilities for all evidence combinations (test dataset) to get expected output probability
             masked_sample = np.where(mask == 0, sample, [float("nan")]*len(sample))
             for i, t, m in ground_truth:
                 if np.array_equal(mask, m) and np.isclose(masked_sample, i, equal_nan=True).all():
@@ -129,6 +129,12 @@ class TestSampleDataset(Dataset):
 
 
 class IRLookupDataset(Dataset):
+    """
+    class providing functionality for implementing the REG and COR approaches
+    - can provide contrastive examples to test whether a particular independence relation is respected by the model (REG)
+    - can match any evidence mask with an independence relation which is applicable according to the evidence mask (COR)
+      these matches are stored in a lookup table for efficient lookups during training
+    """
     def __init__(self, path, var_map, idx_to_var, n):
         """
         path: path to file containing independence relations
