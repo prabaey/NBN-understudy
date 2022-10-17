@@ -23,7 +23,7 @@ def sample_based_evaluation(model, test_sample):
 
     return mae/len(test_sample)
 
-def learn_NN(train_split, full_sample_set, N, **kwargs):
+def learn_NN(train_sample, test_sample_data, N, **kwargs):
 
     mae_total, sample_mae_total = [], []
 
@@ -35,11 +35,7 @@ def learn_NN(train_split, full_sample_set, N, **kwargs):
         torch.cuda.manual_seed(s)
         random.seed(s)
 
-        # perform train/test split and create test sample dataset
-        train_sample, test_sample = random_split(full_sample_set, [train_split, len(full_sample_set)-train_split], generator=torch.Generator().manual_seed(s))
-        test_sample_data = TestSampleDataset(test_sample, kwargs["test_set"], kwargs["var"])
-
-        # split off N training instances from remaining data
+        # select N training instances from train sample set
         train_data, _ = random_split(train_sample, [N, len(train_sample)-N], generator=torch.Generator().manual_seed(s))
 
         # train model for seed s
@@ -55,7 +51,7 @@ def learn_NN(train_split, full_sample_set, N, **kwargs):
 
     return mae_total, sample_mae_total
 
-def learn_BN(seed, GT_model, N, train_split, full_sample_set, test_set, var, mapping):
+def learn_BN(seed, GT_model, N, train_sample, test_sample_data, mapping):
     
     mae_total, sample_mae_total = [], []
 
@@ -65,14 +61,12 @@ def learn_BN(seed, GT_model, N, train_split, full_sample_set, test_set, var, map
         np.random.seed(s)
         random.seed(s)
 
-        # perform train/test split, select N training instances
-        train_sample, test_sample = random_split(full_sample_set, [train_split, len(full_sample_set)-train_split], generator=torch.Generator().manual_seed(s))
-        test_sample_data = TestSampleDataset(test_sample, test_set, var)
+        # select N training instances from train sample set
         train_data, _ = random_split(train_sample, [N, len(train_sample)-N], generator=torch.Generator().manual_seed(s))
-
+        
         # transform Datasets to pandas dataframe for easy use with pgmpy library
         train_set = clean_samples_asia(train_data)
-        clean_test_set = clean_samples_asia(test_sample)
+        clean_test_set = clean_samples_asia(test_sample_data.samples)
 
         # learn Bayesian network from training data
         learned_model = learn_model(GT_model, train_set)
@@ -118,7 +112,9 @@ if __name__ == "__main__":
 
     # generate datasets
     full_sample_set = SampleDataset("data/"+sample_data_path) 
+    train_sample, test_sample = random_split(full_sample_set, [train_split, len(full_sample_set)-train_split], generator=torch.Generator().manual_seed(2022))
     test_set = TestQueryDatasetMultivar("data/"+ground_truth_path)
+    test_sample_set = TestSampleDataset(test_sample, test_set, var)
     IR_data = IRLookupDataset("data/"+IR_data_path, mapping, var_names, n)
 
     # select sample sizes
@@ -160,7 +156,7 @@ if __name__ == "__main__":
 
             f.write(f"BN \n")
 
-            total_mae, sample_mae = learn_BN(seed, GT_model, N, train_split, full_sample_set, test_set, var, mapping)
+            total_mae, sample_mae = learn_BN(seed, GT_model, N, train_sample, test_sample_set, mapping)
 
             f.write(f"total MAE = {total_mae} \n")
             f.write(f"sample MAE = {sample_mae} \n")
@@ -175,7 +171,7 @@ if __name__ == "__main__":
 
                 f.write(f"NN+REG, alpha = {alpha} \n") # when alpha = 0, we are effectively running base NN without REG
 
-                total_mae, sample_mae = learn_NN(train_split, full_sample_set, N, test_set=test_set, IR_data=IR_data, var=var, n=n, mapping=mapping, 
+                total_mae, sample_mae = learn_NN(train_sample, test_sample_set, N, test_set=test_set, IR_data=IR_data, var=var, n=n, mapping=mapping, 
                                                                 var_names=var_names, h=h, bs=bs, bs_reg=bs_reg, epochs=epochs, lr=lr,
                                                                 seed=seed, alpha=alpha, tb=tb, log_dir=log_dir, method=method)
                 
@@ -191,7 +187,7 @@ if __name__ == "__main__":
         with open(logfile, 'a') as f:
 
             f.write(f"NN+COR \n")
-            total_mae, sample_mae = learn_NN(train_split, full_sample_set, N, test_set=test_set, IR_data=IR_data, var=var, n=n, mapping=mapping, 
+            total_mae, sample_mae = learn_NN(train_sample, test_sample_set, N, test_set=test_set, IR_data=IR_data, var=var, n=n, mapping=mapping, 
                                                                 var_names=var_names, h=h, bs=bs, bs_reg=bs_reg, epochs=epochs, lr=lr, 
                                                                 seed=seed, alpha=alpha, tb=tb, log_dir=log_dir, method=method)
             

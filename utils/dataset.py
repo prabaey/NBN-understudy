@@ -12,6 +12,8 @@ class TestQueryDataset(Dataset):
             self.masks = []
             self.targets = []
             lines = file.readlines()
+            self.mapping_vars = lines[0]
+            self.mapping_states = lines[1]
             for line in lines[2:]: 
                 vals = line[:-1].split(',')
                 sample = []
@@ -77,6 +79,8 @@ class SampleDataset(Dataset):
     def __init__(self, path):
         with open(path, 'r') as file:
             lines = file.readlines()
+            self.mapping_vars = lines[0]
+            self.mapping_states = lines[1]
             self.samples = np.array([[float(e) for e in line[:-1].split(',')] for line in lines[2:]])
 
     def __len__(self):
@@ -126,7 +130,6 @@ class TestSampleDataset(Dataset):
     
     def __getitem__(self, idx):
         return (self.samples[idx], self.targets[idx], self.masks[idx])
-
 
 class IRLookupDataset(Dataset):
     """
