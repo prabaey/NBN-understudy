@@ -48,32 +48,28 @@ def get_asia_model():
     
     return asia
 
-def clean_samples_asia(dataset):
-
+def clean_samples(dataset, map_vars, map_states):
     """
     dataset: SampleDataset object used to train NNs
+    map_vars: mapping from positions in sample vector to variables (see initialisation of SampleDataset)
+    map_states: mapping from position in sample vector to states (see initialisation of SampleDataset)
     returns: pandas dataframe containing the same samples in the same order, but is friendlier to use with pgmpy library 
-    note: function is written specifically for asia dataset
     """
     
-    samples = pd.DataFrame(columns = ["asia yes","asia no","smoke yes","smoke no","bronc yes","bronc no","dysp yes","dysp no","lung yes","lung no","tub yes","tub no","xray yes","xray no"])
+    df_rows = []
 
-    for i in range(len(dataset)):
-        samples = samples.append(pd.DataFrame(dataset[i].reshape(1,-1), columns=samples.columns), ignore_index=True)
-
-    df = pd.DataFrame()
-
-    df["asia"] = samples["asia yes"] == 1.0
-    df["smoke"] = samples["smoke yes"] == 1.0
-    df["bronc"] = samples["bronc yes"] == 1.0
-    df["dysp"] = samples["dysp yes"] == 1.0
-    df["lung"] = samples["lung yes"] == 1.0
-    df["tub"] = samples["tub yes"] == 1.0
-    df["xray"] = samples["xray yes"] == 1.0
-
-    cleanset = df.replace(to_replace={True: 'yes', False: 'no'})
+    for sample in dataset:
+        row = {}
+        for i in range(len(sample)):
+            var = map_vars[i]
+            state = map_states[i]
+            if sample[i] == 1:
+                row[var] = state
+        df_rows.append(row)
+        
+    df = pd.DataFrame(df_rows)
     
-    return cleanset
+    return df
 
 def learn_model(GT_model, train_set):
 
@@ -137,7 +133,9 @@ def BN_total_MAE(orig, learned):
 
                 for i in range(len(p)): 
                     evidence[c[i]] = p[i] # create the evidence set
-
+                
+                mae_var = 0
+                n_targets = 0
                 for var in all_vars: # query probability for all vars which are not included in evidence
                     if var not in evidence: 
 
@@ -154,22 +152,26 @@ def BN_total_MAE(orig, learned):
                             learned_pred = infer_learned.query([var], show_progress=False).values # use prior probability
                         
                         idx_map = map_learned_to_orig[var] # use mapping from original model state ordering to learned model state ordering
-                        mae_var = np.sum(np.abs(orig_pred[idx_map] - learned_pred))/len(learned_pred) # WeightedMAE
-                        mae += mae_var
+                        mae_var += np.sum(np.abs(orig_pred[idx_map] - learned_pred))/len(learned_pred) # WeightedMAE per var
+                        n_targets += 1
+                    
+                mae += mae_var/n_targets # mae is summed for all vars and divided by the number of target variables
 
                 n_queries += 1
     
     infer_learned = VariableElimination(learned) # need to make new object or lib crashes
 
     # empty evidence set
+    mae_var = 0
     for var in all_vars:
 
         orig_pred = infer_orig.query([var], show_progress=False).values
         learned_pred = infer_learned.query([var], show_progress=False).values
 
         idx_map = map_learned_to_orig[var] # use mapping from original model state ordering to learned model state ordering
-        mae += np.sum(np.abs(orig_pred[idx_map] - learned_pred))/len(learned_pred)
+        mae_var += np.sum(np.abs(orig_pred[idx_map] - learned_pred))/len(learned_pred)
 
+    mae += mae_var/len(all_vars)
     n_queries += 1
 
     return mae/n_queries
@@ -223,6 +225,8 @@ def BN_sample_MAE(orig, learned, test_sample_data, test_set_clean, var_map):
                 target.append(var)
                 
         # infer values of all targets for given evidence set 
+        mae_var = 0
+        n_targets = 0
         for t in target:
             
             orig_pred = infer_orig.query([t], evidence=evidence, show_progress=False).values
@@ -239,9 +243,10 @@ def BN_sample_MAE(orig, learned, test_sample_data, test_set_clean, var_map):
                 learned_pred = infer_learned.query([t], show_progress=False).values # use prior probability
                 
             idx_map = map_learned_to_orig[t] # use mapping from original model state ordering to learned model state ordering
-            mae_var = np.sum(np.abs(orig_pred[idx_map] - learned_pred))/len(learned_pred) # WeightedMAE
-            mae += mae_var
-            
+            mae_var += np.sum(np.abs(orig_pred[idx_map] - learned_pred))/len(learned_pred) # WeightedMAE
+            n_targets += 1
+        
+        mae += mae_var/n_targets 
         n_queries += 1
             
     return mae/n_queries

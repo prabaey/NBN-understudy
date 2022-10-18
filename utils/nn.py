@@ -42,25 +42,30 @@ def SelectiveCELoss(pred, mask, target):
     pred: (*, n) predicted probabilities for all evidence/target classes
     mask: (*, n) integer tensor with 0 for evidence positions, 1 for targets
     target: (*, n) binary tensor with observed targets, only entries for target variables (as indicated by mask) are used
-    returns: (*,) loss, only calculated for target variables, indicated by 1 in the mask
+    returns: (*,) loss, divided by the number of targets, only calculated for target variables, indicated by 1 in the mask
     """
     loss = - target * torch.log(pred)
     loss = torch.where(mask == 1., loss, 0.)
-    return torch.sum(loss, -1, keepdim=False)
+    num_targets = torch.sum(mask, -1, keepdim=False) 
+    num_targets = torch.where(num_targets > 0, num_targets, torch.ones_like(num_targets)) # to avoid nan loss for all-zero mask
+    return torch.sum(loss, -1, keepdim=False)/num_targets # weigh total loss according to number of targets
 
 def WeightedMSELoss(pred, target, mask, class_mask):
     """
     pred: (*, n) predicted probabilities for all classes
-    target: (*, n) tensor with desired targets, only entries for target variables (as indicated by mask) are used
+    target: (*, n) tensor with desired probabilities, only entries for target variables (as indicated by mask) are used
     mask: (*, n) integer tensor with 0 for evidence positions, 1 for targets
     class_mask: (n, n) binary matrix, with 1 on entry (i, j) when entries i and j in pred and target tensors represent classes of the same var (symmetric)
     returns: (*, ) mean square error loss, only calculated for target variables, indicated by 1 in the mask. loss contributions are divided by number of classes per var
+             and total error is also divided by the number of target variables in the query
     """
     mse = (pred - target)**2
     mse = torch.where(mask == 1., mse, 0.0)
     mse = torch.matmul(mse, class_mask.to(torch.float64)) # aggregate loss according to classes belonging to the same var
     mse = mse/torch.sum(class_mask, dim=1)**2 # weigh loss according to number of classes per var
-    return torch.sum(mse, -1, keepdim=False)
+    num_targets = torch.sum(mask, -1, keepdim=False) 
+    num_targets = torch.where(num_targets > 0, num_targets, torch.ones_like(num_targets)) # to avoid nan loss for all-zero mask
+    return torch.sum(mse, -1, keepdim=False)/num_targets # weigh total loss according to number of targets
 
 def WeightedMAE(pred, target, mask, class_mask):
     """
@@ -69,10 +74,12 @@ def WeightedMAE(pred, target, mask, class_mask):
     mask: (*, n) integer tensor with 0 for evidence positions, 1 for targets
     class_mask: (n, n) binary matrix, with 1 on entry (i, j) when entries i and j in pred and target tensors represent classes of the same var (symmetric)
     returns: (*, ) mean absolute error, only calculated for target variables, indicated by 1 in the mask. error contributions are divided by number of classes per var
+             and total error is also divided by the number of target variables in the query
     """
     mae = torch.abs(pred - target)
     mae = torch.where(mask == 1., mae, 0.0)
     mae = torch.matmul(mae, class_mask.to(torch.float64)) # aggregate mae according to classes belonging to the same var
     mae = mae/torch.sum(class_mask, dim=1)**2 # weigh mae according to number of classes per var
-    
-    return torch.sum(mae, -1, keepdim=False)
+    num_targets = torch.sum(mask, -1, keepdim=False) 
+    num_targets = torch.where(num_targets > 0, num_targets, torch.ones_like(num_targets)) # to avoid nan loss for all-zero mask
+    return torch.sum(mae, -1, keepdim=False)/num_targets # weigh total loss according to number of targets

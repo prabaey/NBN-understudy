@@ -8,7 +8,7 @@ import torch
 from train import Train
 from utils.dataset import TestQueryDatasetMultivar, IRLookupDataset, SampleDataset, TestSampleDataset
 from utils.nn import WeightedMAE
-from BN_baseline import get_asia_model, clean_samples_asia, learn_model, BN_total_MAE, BN_sample_MAE
+from BN_baseline import clean_samples, get_asia_model, learn_model, BN_total_MAE, BN_sample_MAE
 
 def sample_based_evaluation(model, test_sample):
     
@@ -65,8 +65,8 @@ def learn_BN(seed, GT_model, N, train_sample, test_sample_data, mapping):
         train_data, _ = random_split(train_sample, [N, len(train_sample)-N], generator=torch.Generator().manual_seed(s))
         
         # transform Datasets to pandas dataframe for easy use with pgmpy library
-        train_set = clean_samples_asia(train_data)
-        clean_test_set = clean_samples_asia(test_sample_data.samples)
+        train_set = clean_samples(train_data, train_sample.mapping_vars, train_sample.mapping_states)
+        clean_test_set = clean_samples(test_sample_data.samples, train_sample.mapping_vars, train_sample.mapping_states)
 
         # learn Bayesian network from training data
         learned_model = learn_model(GT_model, train_set)
@@ -84,7 +84,8 @@ def learn_BN(seed, GT_model, N, train_sample, test_sample_data, mapping):
 if __name__ == "__main__":
 
     # input config
-    sample_data_path = 'asia/asia_samples.txt' # 11000 samples extracted from ground-truth distribution
+    train_data_path = 'asia/asia_samples_train.txt' # 10000 train samples extracted from ground-truth distribution
+    test_data_path = 'asia/asia_samples_test.txt' # 1000 test samples extracted from ground-truth distribution
     ground_truth_path = 'asia/asia_ground_truth.txt' # ground-truth target probabilities for all possible queries (calculation of total MAE)
     IR_data_path = 'asia/asia_independencies.txt' # independence relations extracted from ground-truth asia network
     var_names = ["asia", "smoke", "bronc", "dysp", "lung", "tub", "xray"] # names of variables, fixed order
@@ -111,10 +112,13 @@ if __name__ == "__main__":
     train_config = {"bs":bs, "bs_reg":bs_reg, "epochs":epochs, "lr":lr, "seed":seed}
 
     # generate datasets
-    full_sample_set = SampleDataset("data/"+sample_data_path) 
-    train_sample, test_sample = random_split(full_sample_set, [train_split, len(full_sample_set)-train_split], generator=torch.Generator().manual_seed(2022))
+    train_sample = SampleDataset("data/"+train_data_path) 
+    
     test_set = TestQueryDatasetMultivar("data/"+ground_truth_path)
+
+    test_sample = SampleDataset("data/"+test_data_path) 
     test_sample_set = TestSampleDataset(test_sample, test_set, var)
+
     IR_data = IRLookupDataset("data/"+IR_data_path, mapping, var_names, n)
 
     # select sample sizes
