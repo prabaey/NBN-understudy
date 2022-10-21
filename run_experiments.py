@@ -6,24 +6,29 @@ from torch.utils.data import random_split, DataLoader
 import torch
 
 from train import Train
-from utils.dataset import TestQueryDatasetMultivar, IRLookupDataset, SampleDataset, TestSampleDataset
+from utils.dataset import TestQueryDatasetMultivar, IRLookupDataset, SampleDataset
 from utils.nn import WeightedMAE
-from BN_baseline import clean_samples, get_asia_model, learn_model, BN_total_MAE, BN_sample_MAE
+from BN_baseline import clean_samples, evaluate_BN, get_asia_model, learn_model
 
-def sample_based_evaluation(model, test_sample):
-    
-    test_dataloader = DataLoader(test_sample, batch_size = 64, shuffle=True)
+def evaluate_NN(model, test_set):
 
-    model.eval()
+    dataloader = DataLoader(test_set, batch_size=64, shuffle=False) # data loader for test queries
+    total_mae = 0
 
-    mae = 0
-    for sample, target, mask in test_dataloader:
-        pred = model(sample, mask)
-        mae += torch.sum(WeightedMAE(pred, target, mask, model.class_mask))
+    # test
+    for input, target, mask in dataloader:
 
-    return mae/len(test_sample)
+        #model predictions
+        model.eval()
+        pred = model(input, mask)
 
-def learn_NN(train_sample, test_sample_data, N, **kwargs):
+        # test mae (based on ground-truth bayesian model probabilities)
+        mae = WeightedMAE(pred, target, mask, model.class_mask)
+        total_mae += torch.sum(mae)
+
+    return total_mae/len(test_set)
+
+def learn_NN(train_sample, sample_test_set, N, **kwargs):
 
     mae_total, sample_mae_total = [], []
 
@@ -43,7 +48,7 @@ def learn_NN(train_sample, test_sample_data, N, **kwargs):
         model, total_mae, _ = train()
 
         # calculate sample MAE for test instances sampled randomly from ground truth distribution
-        sample_mae = sample_based_evaluation(model, test_sample_data)
+        sample_mae = evaluate_NN(model, sample_test_set)
 
         # save model metrics 
         mae_total.append(total_mae.detach().item())
@@ -51,7 +56,7 @@ def learn_NN(train_sample, test_sample_data, N, **kwargs):
 
     return mae_total, sample_mae_total
 
-def learn_BN(seed, GT_model, N, train_sample, test_sample_data, mapping):
+def learn_BN(seed, GT_model, N, train_sample, total_test_path, sample_test_path):
     
     mae_total, sample_mae_total = [], []
 
@@ -66,14 +71,13 @@ def learn_BN(seed, GT_model, N, train_sample, test_sample_data, mapping):
         
         # transform Datasets to pandas dataframe for easy use with pgmpy library
         train_set = clean_samples(train_data, train_sample.mapping_vars, train_sample.mapping_states)
-        clean_test_set = clean_samples(test_sample_data.samples, train_sample.mapping_vars, train_sample.mapping_states)
 
         # learn Bayesian network from training data
         learned_model = learn_model(GT_model, train_set)
 
         # calculate total MAE and sample MAE
-        total_mae = BN_total_MAE(GT_model, learned_model)
-        sample_mae = BN_sample_MAE(GT_model, learned_model, test_sample_data, clean_test_set, mapping) 
+        total_mae = evaluate_BN(learned_model, total_test_path)
+        sample_mae = evaluate_BN(learned_model, sample_test_path) 
     
         # save model metrics
         mae_total.append(total_mae)
@@ -84,14 +88,14 @@ def learn_BN(seed, GT_model, N, train_sample, test_sample_data, mapping):
 if __name__ == "__main__":
 
     # input config
-    train_data_path = 'asia/asia_samples_train.txt' # 10000 train samples extracted from ground-truth distribution
-    test_data_path = 'asia/asia_samples_test.txt' # 1000 test samples extracted from ground-truth distribution
-    ground_truth_path = 'asia/asia_ground_truth.txt' # ground-truth target probabilities for all possible queries (calculation of total MAE)
-    IR_data_path = 'asia/asia_independencies.txt' # independence relations extracted from ground-truth asia network
+    train_path = 'data/asia/train_samples.txt' # 10000 train samples extracted from ground-truth distribution
+    test_sample_path = 'data/asia/sample_test_set.txt' # test queries according to 1000 test samples extracted from ground-truth distribution (calculation of sample MAE)
+    test_total_path = 'data/asia/total_test_set.txt' # ground-truth target probabilities for all possible queries (calculation of total MAE)
+    IR_path = 'data/asia/independencies.txt' # independence relations extracted from ground-truth asia network
+
     var_names = ["asia", "smoke", "bronc", "dysp", "lung", "tub", "xray"] # names of variables, fixed order
     var = [2, 2, 2, 2, 2, 2, 2] # cardinality of all variables
     mapping = {"asia":[0, 1], "smoke":[2, 3], "bronc":[4, 5], "dysp":[6, 7], "lung":[8, 9], "tub":[10, 11], "xray":[12, 13]} # where to each variable's classes
-    train_split = 10000 # total number of train samples to split off (remaining 1000 are test samples)
     
     # get ground truth asia model
     GT_model = get_asia_model() 
@@ -112,14 +116,12 @@ if __name__ == "__main__":
     train_config = {"bs":bs, "bs_reg":bs_reg, "epochs":epochs, "lr":lr, "seed":seed}
 
     # generate datasets
-    train_sample = SampleDataset("data/"+train_data_path) 
+    train_sample = SampleDataset(train_path) 
     
-    test_set = TestQueryDatasetMultivar("data/"+ground_truth_path)
+    total_test_set = TestQueryDatasetMultivar(test_total_path)
+    sample_test_set = TestQueryDatasetMultivar(test_sample_path)
 
-    test_sample = SampleDataset("data/"+test_data_path) 
-    test_sample_set = TestSampleDataset(test_sample, test_set, var)
-
-    IR_data = IRLookupDataset("data/"+IR_data_path, mapping, var_names, n)
+    IR_data = IRLookupDataset(IR_path, mapping, var_names, n)
 
     # select sample sizes
     size = [50, 100, 200, 500, 1000, 2000, 5000, 10000]
@@ -160,7 +162,7 @@ if __name__ == "__main__":
 
             f.write(f"BN \n")
 
-            total_mae, sample_mae = learn_BN(seed, GT_model, N, train_sample, test_sample_set, mapping)
+            total_mae, sample_mae = learn_BN(seed, GT_model, N, train_sample, test_total_path, test_sample_path)
 
             f.write(f"total MAE = {total_mae} \n")
             f.write(f"sample MAE = {sample_mae} \n")
@@ -175,7 +177,7 @@ if __name__ == "__main__":
 
                 f.write(f"NN+REG, alpha = {alpha} \n") # when alpha = 0, we are effectively running base NN without REG
 
-                total_mae, sample_mae = learn_NN(train_sample, test_sample_set, N, test_set=test_set, IR_data=IR_data, var=var, n=n, mapping=mapping, 
+                total_mae, sample_mae = learn_NN(train_sample, sample_test_set, N, test_set=total_test_set, IR_data=IR_data, var=var, n=n, mapping=mapping, 
                                                                 var_names=var_names, h=h, bs=bs, bs_reg=bs_reg, epochs=epochs, lr=lr,
                                                                 seed=seed, alpha=alpha, tb=tb, log_dir=log_dir, method=method)
                 
@@ -191,7 +193,7 @@ if __name__ == "__main__":
         with open(logfile, 'a') as f:
 
             f.write(f"NN+COR \n")
-            total_mae, sample_mae = learn_NN(train_sample, test_sample_set, N, test_set=test_set, IR_data=IR_data, var=var, n=n, mapping=mapping, 
+            total_mae, sample_mae = learn_NN(train_sample, sample_test_set, N, test_set=total_test_set, IR_data=IR_data, var=var, n=n, mapping=mapping, 
                                                                 var_names=var_names, h=h, bs=bs, bs_reg=bs_reg, epochs=epochs, lr=lr, 
                                                                 seed=seed, alpha=alpha, tb=tb, log_dir=log_dir, method=method)
             

@@ -37,17 +37,20 @@ def Softmax(logits, class_mask):
     softmax = x/denom # dim (*, n)
     return softmax # logits rescaled as probabilities, with probs of all classes belonging to same var summing to 1
 
-def SelectiveCELoss(pred, mask, target):
+def SelectiveCELoss(pred, mask, target, class_mask):
     """
     pred: (*, n) predicted probabilities for all evidence/target classes
     mask: (*, n) integer tensor with 0 for evidence positions, 1 for targets
     target: (*, n) binary tensor with observed targets, only entries for target variables (as indicated by mask) are used
-    returns: (*,) loss, divided by the number of targets, only calculated for target variables, indicated by 1 in the mask
+    returns: (*, ) loss, divided by the number of targets, only calculated for target variables, indicated by 1 in the mask
     """
     loss = - target * torch.log(pred)
     loss = torch.where(mask == 1., loss, 0.)
-    num_targets = torch.sum(mask, -1, keepdim=False) 
+
+    weighted_mask = mask / torch.sum(class_mask, dim = 1)
+    num_targets = torch.sum(weighted_mask, -1, keepdim=False) 
     num_targets = torch.where(num_targets > 0, num_targets, torch.ones_like(num_targets)) # to avoid nan loss for all-zero mask
+
     return torch.sum(loss, -1, keepdim=False)/num_targets # weigh total loss according to number of targets
 
 def WeightedMSELoss(pred, target, mask, class_mask):
@@ -61,10 +64,12 @@ def WeightedMSELoss(pred, target, mask, class_mask):
     """
     mse = (pred - target)**2
     mse = torch.where(mask == 1., mse, 0.0)
-    mse = torch.matmul(mse, class_mask.to(torch.float64)) # aggregate loss according to classes belonging to the same var
-    mse = mse/torch.sum(class_mask, dim=1)**2 # weigh loss according to number of classes per var
-    num_targets = torch.sum(mask, -1, keepdim=False) 
+    mse = mse / torch.sum(class_mask, dim = 1) # weigh loss according to number of classes per var
+
+    weighted_mask = mask / torch.sum(class_mask, dim = 1)
+    num_targets = torch.sum(weighted_mask, -1, keepdim=False) 
     num_targets = torch.where(num_targets > 0, num_targets, torch.ones_like(num_targets)) # to avoid nan loss for all-zero mask
+
     return torch.sum(mse, -1, keepdim=False)/num_targets # weigh total loss according to number of targets
 
 def WeightedMAE(pred, target, mask, class_mask):
@@ -78,8 +83,10 @@ def WeightedMAE(pred, target, mask, class_mask):
     """
     mae = torch.abs(pred - target)
     mae = torch.where(mask == 1., mae, 0.0)
-    mae = torch.matmul(mae, class_mask.to(torch.float64)) # aggregate mae according to classes belonging to the same var
-    mae = mae/torch.sum(class_mask, dim=1)**2 # weigh mae according to number of classes per var
-    num_targets = torch.sum(mask, -1, keepdim=False) 
+    mae = mae / torch.sum(class_mask, dim = 1) # weigh mae according to number of classes per var
+
+    weighted_mask = mask / torch.sum(class_mask, dim = 1)
+    num_targets = torch.sum(weighted_mask, -1, keepdim=False) 
     num_targets = torch.where(num_targets > 0, num_targets, torch.ones_like(num_targets)) # to avoid nan loss for all-zero mask
+
     return torch.sum(mae, -1, keepdim=False)/num_targets # weigh total loss according to number of targets

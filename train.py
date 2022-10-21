@@ -86,7 +86,7 @@ class Train():
                 # forward and backward pass
                 self.model.train()
                 pred = self.model(input, mask)
-                train_loss = SelectiveCELoss(pred, mask, input)
+                train_loss = SelectiveCELoss(pred, mask, input, self.model.class_mask)
                 train_loss = torch.sum(train_loss)
                 epoch_train_loss += train_loss
 
@@ -185,7 +185,7 @@ class Train():
                         loss_mask = torch.clone(mask)
                         for y in Y_pos: 
                             loss_mask[:,y] = 0 # targets in Y don't contribute to this part of the loss
-                        loss_i = SelectiveCELoss(pred, i, loss_mask).sum()
+                        loss_i = SelectiveCELoss(pred, loss_mask, i, self.model.class_mask).sum()
 
                         # calculate loss ONLY for targets in Y, with corrupted evidence set
                         i_corr = torch.unsqueeze(i_corr, dim=0)
@@ -193,7 +193,7 @@ class Train():
                         loss_mask = torch.zeros(mask.shape)
                         for y in Y_pos: 
                             loss_mask[:,y] = 1 # only targets in Y contribute to this part of the loss
-                        loss_corr = SelectiveCELoss(pred, i, loss_mask).sum()
+                        loss_corr = SelectiveCELoss(pred, loss_mask, i, self.model.class_mask).sum()
                         
                         # add both contributions to total loss, divide by number of targets to weigh properly
                         loss += loss_i + loss_corr
@@ -202,7 +202,7 @@ class Train():
 
                         i = torch.unsqueeze(i, dim=0)
                         pred = self.model(i, mask)
-                        loss += SelectiveCELoss(pred, i, mask).sum()
+                        loss += SelectiveCELoss(pred, mask, i, self.model.class_mask).sum()
 
                 # update parameters based on total train loss
                 epoch_train_loss += loss

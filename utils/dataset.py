@@ -90,46 +90,46 @@ class SampleDataset(Dataset):
         return self.samples[idx]
 
 
-class TestSampleDataset(Dataset):
-    """
-    stores ground-truth target probabilities for randomly sampled evidence values reflecting the underlying distribution of the data (sample MAE)
-    at initialization, receives: 
-    - samples: SampleDataset object containing test samples which serve as the observed values for the evidence, following the underlying ground-truth distribution
-    - ground-truth: TestQueryDataset object containing the target probabilities for all combinations of evidence, serves as a lookup
-    - var: list indicating number of classes per var, length is equal to number of vars, total sum is equal to input dim (n)
-    """
-    def __init__(self, samples, ground_truth, var):
+# class TestSampleDataset(Dataset):
+#     """
+#     stores ground-truth target probabilities for randomly sampled evidence values reflecting the underlying distribution of the data (sample MAE)
+#     at initialization, receives: 
+#     - samples: SampleDataset object containing test samples which serve as the observed values for the evidence, following the underlying ground-truth distribution
+#     - ground-truth: TestQueryDataset object containing the target probabilities for all combinations of evidence, serves as a lookup
+#     - var: list indicating number of classes per var, length is equal to number of vars, total sum is equal to input dim (n)
+#     """
+#     def __init__(self, samples, ground_truth, var):
 
-        self.samples, self.masks, self.targets = [], [], []
+#         self.samples, self.masks, self.targets = [], [], []
 
-        for sample in samples:
+#         for sample in samples:
 
-            # generate random mask
-            mask = np.random.randint(0, 2, size = len(var))
-            while np.isclose(np.sum(mask), 0): # we will not be able to find zero-mask in ground-truth probability set 
-                mask = np.random.randint(0, 2, size = len(var))
-            stretch_mask = []
-            for j in range(len(mask)):
-                stretch_mask += var[j]*[mask[j]]
-            mask = np.array(stretch_mask)
+#             # generate random mask
+#             mask = np.random.randint(0, 2, size = len(var))
+#             while np.isclose(np.sum(mask), 0): # we will not be able to find zero-mask in ground-truth probability set 
+#                 mask = np.random.randint(0, 2, size = len(var))
+#             stretch_mask = []
+#             for j in range(len(mask)):
+#                 stretch_mask += var[j]*[mask[j]]
+#             mask = np.array(stretch_mask)
 
-            # go through ground truth probabilities for all evidence combinations (test dataset) to get expected output probability
-            masked_sample = np.where(mask == 0, sample, [float("nan")]*len(sample))
-            for i, t, m in ground_truth:
-                if np.array_equal(mask, m) and np.isclose(masked_sample, i, equal_nan=True).all():
-                    target = t
-                    break
+#             # go through ground truth probabilities for all evidence combinations (test dataset) to get expected output probability
+#             masked_sample = np.where(mask == 0, sample, [float("nan")]*len(sample))
+#             for i, t, m in ground_truth:
+#                 if np.array_equal(mask, m) and np.isclose(masked_sample, i, equal_nan=True).all():
+#                     target = t
+#                     break
 
-            # store trio of sample, mask and corresponding target
-            self.samples.append(sample)
-            self.masks.append(mask)
-            self.targets.append(target)
+#             # store trio of sample, mask and corresponding target
+#             self.samples.append(sample)
+#             self.masks.append(mask)
+#             self.targets.append(target)
 
-    def __len__(self):
-        return len(self.samples)
+#     def __len__(self):
+#         return len(self.samples)
     
-    def __getitem__(self, idx):
-        return (self.samples[idx], self.targets[idx], self.masks[idx])
+#     def __getitem__(self, idx):
+#         return (self.samples[idx], self.targets[idx], self.masks[idx])
 
 class IRLookupDataset(Dataset):
     """
