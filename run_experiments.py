@@ -12,6 +12,13 @@ from BN_baseline import clean_samples, evaluate_BN, get_asia_model, learn_model
 
 def evaluate_NN(model, test_set):
 
+    """
+    Evaluates a learned NN for all queries in a provided test set.
+    model: NeuralBN, trained 
+    test_set: TestQueryDataset containing a set of queries to test the model with (queries are tuples of the form input, target, mask)
+    returns: average MAE score over all queries in the test set
+    """
+
     dataloader = DataLoader(test_set, batch_size=64, shuffle=False) # data loader for test queries
     total_mae = 0
 
@@ -29,6 +36,14 @@ def evaluate_NN(model, test_set):
     return total_mae/len(test_set)
 
 def learn_NN(train_sample, sample_test_set, N, **kwargs):
+    """
+    Trains a neural network, using various seeds for initialization and sampling of the training set.
+    train_sample: SampleDataset, contains the full set of training samples 
+    sample_test_set: TestQueryDataset, contains the sample test queries
+    N: training set size 
+    returns: total MAE (MAE over test set containing all queries), sample MAE (MAE over test set containing sample queries), 
+             both are lists containing the error obtained after training the model for each seed
+    """
 
     mae_total, sample_mae_total = [], []
 
@@ -56,7 +71,19 @@ def learn_NN(train_sample, sample_test_set, N, **kwargs):
 
     return mae_total, sample_mae_total
 
-def learn_BN(seed, GT_model, N, train_sample, total_test_path, sample_test_path):
+def learn_BN(seed, GT_model, N, train_sample, total_test_path, sample_test_path, smoothing):
+    """
+    Trains a bayesian network, using various seeds for sampling of the training set.
+    seed: list of seeds 
+    GT_model: ground-truth DAG structure of the bayesian network 
+    N: training set size 
+    train_sample: SampleDataset, contains the full set of training samples 
+    total_test_path: TestQueryDataset, contains all possible test queries
+    sample_test_path: TestQueryDataset, contains the sample test queries
+    smoothing: boolean, indicates whether K2 smoothing should be applied when learning the BN or not 
+    returns: total MAE (MAE over test set containing all queries), sample MAE (MAE over test set containing sample queries), 
+             both are lists containing the error obtained after training the model for each seed
+    """
     
     mae_total, sample_mae_total = [], []
 
@@ -73,7 +100,7 @@ def learn_BN(seed, GT_model, N, train_sample, total_test_path, sample_test_path)
         train_set = clean_samples(train_data, train_sample.mapping_vars, train_sample.mapping_states)
 
         # learn Bayesian network from training data
-        learned_model = learn_model(GT_model, train_set)
+        learned_model = learn_model(GT_model, train_set, smoothing)
 
         # calculate total MAE and sample MAE
         total_mae = evaluate_BN(learned_model, total_test_path)
@@ -88,7 +115,7 @@ def learn_BN(seed, GT_model, N, train_sample, total_test_path, sample_test_path)
 if __name__ == "__main__":
 
     # input config
-    train_path = 'data/asia/train_samples.txt' # 10000 train samples extracted from ground-truth distribution
+    train_path = 'data/asia/train_samples.txt' # 20000 train samples extracted from ground-truth distribution
     test_sample_path = 'data/asia/sample_test_set.txt' # test queries according to 1000 test samples extracted from ground-truth distribution (calculation of sample MAE)
     test_total_path = 'data/asia/total_test_set.txt' # ground-truth target probabilities for all possible queries (calculation of total MAE)
     IR_path = 'data/asia/independencies.txt' # independence relations extracted from ground-truth asia network
@@ -99,6 +126,8 @@ if __name__ == "__main__":
     
     # get ground truth asia model
     GT_model = get_asia_model() 
+    smoothing = True
+    BN_config = {"BN K2 smoothing": smoothing}
 
     # architecture config
     n = sum(var)
@@ -135,6 +164,9 @@ if __name__ == "__main__":
         f.write(f"BN structure: asia \n")
         f.write("------------------- \n")
         f.write("\n")
+        for param, value in BN_config.items():
+            f.write(f"{param} = {value} \n")
+        f.write("\n")
         for param, value in arch_config.items():
             f.write(f"{param} = {value} \n")
         f.write("\n")
@@ -162,7 +194,7 @@ if __name__ == "__main__":
 
             f.write(f"BN \n")
 
-            total_mae, sample_mae = learn_BN(seed, GT_model, N, train_sample, test_total_path, test_sample_path)
+            total_mae, sample_mae = learn_BN(seed, GT_model, N, train_sample, test_total_path, test_sample_path, smoothing)
 
             f.write(f"total MAE = {total_mae} \n")
             f.write(f"sample MAE = {sample_mae} \n")

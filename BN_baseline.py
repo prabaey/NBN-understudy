@@ -6,7 +6,7 @@ from pgmpy.models import BayesianNetwork
 from pgmpy.factors.discrete import TabularCPD
 from pgmpy.utils import get_example_model
 from pgmpy.inference import VariableElimination
-from pgmpy.estimators import MaximumLikelihoodEstimator
+from pgmpy.estimators import MaximumLikelihoodEstimator, BayesianEstimator
 
 def get_asia_model(): 
 
@@ -71,17 +71,21 @@ def clean_samples(dataset, map_vars, map_states):
     
     return df
 
-def learn_model(GT_model, train_set):
+def learn_model(GT_model, train_set, smoothing):
 
     """
     GT_model: contains the ground-truth causal structure of the model (edge connectivity)
     train_set: data from which to estimate the CPTs of the learned BN
+    smoothing: whether to apply K2 smoothing as a prior in estimating the CPTs
     returns: BN with structure identical to GT_model, but with CPTs learned from the data
     """
     
     learned_model = BayesianNetwork(ebunch=GT_model.edges())
-    learned_model.fit(data = train_set, estimator = MaximumLikelihoodEstimator)
-    
+    if smoothing: 
+        learned_model.fit(data = train_set, estimator = BayesianEstimator, prior_type="K2")
+    else:
+        learned_model.fit(data = train_set, estimator = MaximumLikelihoodEstimator)
+      
     return learned_model
 
 def evaluate_BN(model, test_file):
