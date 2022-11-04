@@ -200,6 +200,9 @@ if __name__ == "__main__":
             f.write(f"sample MAE = {sample_mae} \n")
             f.write("\n")
 
+            res_mean_sample["BN"] = {"total": np.mean(total_mae), "sample":np.mean(sample_mae)}
+            res_std_sample["BN"] = {"total": np.std(total_mae), "sample":np.std(sample_mae)}
+
         # NN baseline
         # NN+REG
         method = "REG"

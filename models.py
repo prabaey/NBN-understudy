@@ -50,11 +50,6 @@ class NeuralBN(nn.Module):
         Returns: (batch, n) output probability at all target positions, normalised per var (inputs are copied at evidence positions)
         """
 
-        # TODO: effective differences with original implementation when max_steps = 1
-        # - ReLU activation instead of Tanh (Tanh not great for feedforward networks)
-        # - x = self.i2h(x) instead of x = self.i2h(x) + self.h0 (does not make sense in a feedforward model)
-        # don't expect these to lead to qualitative changes in output but needs to be checked (test with 1 actual hidden layer, so dims go 14, 50, 50, 14)
-        
         # intialization vector is obtained by transforming a vector of size hidden_dims[-1] into dim n (normalized per var) using the hidden-to-output layer
         # internally replaces values of targets in input by values from initialization vector
         x = self.h2o(self.h0, inputs, mask)
