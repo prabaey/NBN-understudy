@@ -42,7 +42,7 @@ def SelectiveCELoss(pred, mask, target, class_mask):
     pred: (*, n) predicted probabilities for all evidence/target classes
     mask: (*, n) integer tensor with 0 for evidence positions, 1 for targets
     target: (*, n) binary tensor with observed targets, only entries for target variables (as indicated by mask) are used
-    returns: (*, ) loss, divided by the number of targets, only calculated for target variables, indicated by 1 in the mask
+    returns: (*, ) loss, divided by the number of targets, only calculated for target variables (indicated by 1 in the mask)
     """
     loss = - target * torch.log(pred)
     loss = torch.where(mask == 1., loss, 0.)
@@ -59,7 +59,7 @@ def WeightedMSELoss(pred, target, mask, class_mask):
     target: (*, n) tensor with desired probabilities, only entries for target variables (as indicated by mask) are used
     mask: (*, n) integer tensor with 0 for evidence positions, 1 for targets
     class_mask: (n, n) binary matrix, with 1 on entry (i, j) when entries i and j in pred and target tensors represent classes of the same var (symmetric)
-    returns: (*, ) mean square error loss, only calculated for target variables, indicated by 1 in the mask. loss contributions are divided by number of classes per var
+    returns: (*, ) mean square error loss, only calculated for target variables (indicated by 1 in the mask). loss contributions are divided by number of classes per var
              and total error is also divided by the number of target variables in the query
     """
     mse = (pred - target)**2

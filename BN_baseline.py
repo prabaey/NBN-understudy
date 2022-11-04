@@ -80,7 +80,11 @@ def learn_model(GT_model, train_set, smoothing):
     returns: BN with structure identical to GT_model, but with CPTs learned from the data
     """
     
-    learned_model = BayesianNetwork(ebunch=GT_model.edges())
+    learned_model = BayesianNetwork()
+    for edge in GT_model.edges:
+        learned_model.add_edge(edge[0], edge[1])
+    learned_model.add_nodes_from(GT_model.nodes)
+
     if smoothing: 
         learned_model.fit(data = train_set, estimator = BayesianEstimator, prior_type="K2")
     else:

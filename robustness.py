@@ -28,7 +28,7 @@ if __name__ == "__main__":
     bs_reg = 16 # batch size reg
     epochs = 500 # number of epochs to train for
     lr = 0.001 # learning rate
-    seed = [17, 22, 58, 35, 37, 78, 36, 13, 85, 41] # seed for train set selection and model initialization
+    seed = [17, 22, 58, 35, 37, 78, 36, 13, 85, 41] # seed for train set selection and model initialization$
     tb = False # write runs to tensor_board when True. if so, provide log_dir
     log_dir = None
     train_config = {"bs":bs, "bs_reg":bs_reg, "epochs":epochs, "lr":lr, "seed":seed}
