@@ -1,6 +1,6 @@
 # Neural Bayesian Network Understudy
 
-This repository contains all code needed to reproduce results presented in [Neural Bayesian Network Understudy](https://arxiv.org/abs/2211.08243). This paper was presented at the [CML4Impact](https://www.cml-4-impact.vanderschaar-lab.com/) workshop at NeurIPS 2022. When reusing any of the ideas presented in this repository and the accompanying paper, please cite our work as follows:
+This repository contains all code needed to reproduce results presented in [Neural Bayesian Network Understudy](https://arxiv.org/abs/2211.08243). This paper was presented as a [poster](https://nips.cc/media/PosterPDFs/NeurIPS%202022/61726.png?t=1668776619.4658473) at the [CML4Impact](https://www.cml-4-impact.vanderschaar-lab.com/) workshop at NeurIPS 2022 . When reusing any of the ideas presented in this repository and the accompanying paper, please cite our work as follows:
 
 **Citation**: Paloma Rabaey, Cedric De Boom, and Thomas Demeester. Neural Bayesian Network Understudy, 2022. URL https://arxiv.org/abs/2211.08243.
 
